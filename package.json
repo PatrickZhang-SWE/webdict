@@ -6,7 +6,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.4",
-    "hono": "^4.6.8"
+    "hono": "^4.6.8",
+    "fast-xml-parser": "^4.5.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
