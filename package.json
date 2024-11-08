@@ -2,12 +2,13 @@
   "name": "webdict",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch --inspect src/index.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.4",
     "hono": "^4.6.8",
-    "fast-xml-parser": "^4.5.0"
+    "fast-xml-parser": "^4.5.0",
+    "hash-wasm": "4.11.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
