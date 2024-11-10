@@ -1,4 +1,4 @@
-export type headerXmlObject = {
+export type HeaderXmlObject = {
     GeneratedByEngineVersion: string,
     RequiredEngineVersion: string,
     Encrypted: string,
@@ -14,4 +14,5 @@ export type headerXmlObject = {
     StyleSheet: string,
     RegisterBy: string,
     RegCode: string,
+    StripKey: string,
 }
