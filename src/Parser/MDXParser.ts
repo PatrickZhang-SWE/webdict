@@ -51,7 +51,7 @@ function convertParsedHeaderStr(parsedXml: any): HeaderXmlObject {
         DataSourceFormat: parsedXml['@_DataSourceFormat'],
         StyleSheet: parsedXml['@_StyleSheet'],
         RegisterBy: parsedXml['@_RegisterBy'],
-        RegCode: '',  // Assuming 'RegCode' is not in the JS object, you might want to handle this appropriately
+        RegCode: parsedXml['@_RegCode'],
         StripKey: parsedXml['@_StripKey'],
     }
 }
