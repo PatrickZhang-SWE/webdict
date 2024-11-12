@@ -6,8 +6,22 @@ function isLittleEndian(): boolean {
 }
 
 function readAsBigEndianNumber(buffer: ArrayBuffer): number {
+    const size = buffer.byteLength;
     const dataView = new DataView(buffer);
-    return dataView.getUint32(0, false);
+    switch (size) {
+        case 1:
+            return dataView.getInt8(0);
+        case 2:
+            return dataView.getInt16(0, false);
+        case 4:
+            return dataView.getInt32(0, false);
+    }
+    throw new Error(`Unsupport size ${size}`);
+}
+
+function readAsBigEndianBigInt(buff: ArrayBuffer): bigint {
+    const dataView = new DataView(buff);
+    return dataView.getBigInt64(0, false);
 }
 
 function readAsLittleStr(buff: ArrayBuffer, format: string): string {
@@ -30,4 +44,4 @@ function flipArrayEndianness(buff: ArrayBuffer): ArrayBuffer {
     return view.buffer;
 }
 
-export {isLittleEndian, readAsBigEndianNumber, readAsLittleStr, readAsLittleNumber, flipArrayEndianness}
+export {isLittleEndian, readAsBigEndianNumber, readAsLittleStr, readAsLittleNumber, flipArrayEndianness, readAsBigEndianBigInt}
