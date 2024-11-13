@@ -3,6 +3,8 @@ import { readAsBigEndianNumber, readAsLittleStr, readAsLittleNumber, readAsBigEn
 import { adler32Cal } from '../Utils/Algorithem.js'
 import { parseXml } from '../Utils/XMLUtil.js'
 import { type HeaderXmlObject } from '../common/MDXEntities.js'
+import * as zlib from 'zlib'
+import * as util from 'util'
 
 const headerSectMeta = {
     length: 4,
@@ -16,6 +18,11 @@ const keywordSectMeta = {
     keyIndexDecopLength: 8,
     keyIndexCmpLength: 8,
     keyBlocksLength: 8,
+    checksumLength: 4,
+}
+
+const compressionMeta = {
+    compTypeLength: 4,
     checksumLength: 4,
 }
 
@@ -70,15 +77,39 @@ async function parseKeyWordSect(buff: ArrayBuffer, headerMeta: HeaderXmlObject) 
         throw new Error(`Encrypted in head Meat is not a number`);
     }
     const encryptedHeadValue = +encryptIndictor;
-    if (encryptedHeadValue & 0x01) {
+    if (encryptedHeadValue & 0b01) {
         console.log("This dict is encrypted, and is not supported now.");
         throw new Error("Encrypted dicts are not supported");
     }
-
+    await parseKeywordIndex(buff.slice(checksumLastByte, checksumLastByte + (encryptedHeadValue & 0b10 ? Number(lengthOfKeyIndexComp) : Number(lengthOfKeyIndexDecop))), headerMeta);
 }
 
-function parseKeywordIndex(buff: ArrayBuffer) {
+async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject) {
+    const compTypeBytes = buff.slice(0, compressionMeta.compTypeLength);
+    const checksumLastByte = compressionMeta.compTypeLength + compressionMeta.checksumLength;
+    const checksumBytes = buff.slice(compressionMeta.compTypeLength, checksumLastByte);
+    const calAdler32Value = adler32Cal(new Uint8Array(checksumBytes), true);
+    const compressedData = buff.slice(checksumLastByte);
+    const compType = readAsBigEndianNumber(compTypeBytes.slice(0, 1));
+    const decompressedData = await decompress(compressedData, compType);
+    const numberOfKeywords = readAsBigEndianBigInt(decompressedData.slice(0, 8));
+    const lengthOfFirstKeyword = readAsBigEndianNumber(decompressedData.slice(8, 10));
+}
 
+async function decompress(compressedData: ArrayBuffer, compressType: number) {
+    if (compressType === 0) {
+        console.log("No compression.");
+        return compressedData;
+    }
+    if (compressType === 0x01) {
+        console.log("LZO compression is used.");
+        throw new Error("LZO compression is not supported");
+    }
+    if (compressType === 0x02) {
+        console.log("zlib compression is used.");
+        return (await util.promisify(zlib.unzip)(compressedData.slice(4))).buffer;
+    }
+    throw new Error("LZO compression is not supported");
 }
 
 function convertParsedHeaderStr(parsedXml: any): HeaderXmlObject {
