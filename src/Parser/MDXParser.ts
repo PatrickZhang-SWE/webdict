@@ -1,6 +1,6 @@
 import { type ParserResultText } from './ParserResult.js'
 import { readAsBigEndianNumber, readAsLittleStr, readAsLittleNumber, readAsBigEndianBigInt } from '../Utils/Endianness.js'
-import { adler32Cal } from '../Utils/Algorithem.js'
+import { adler32Cal, decryptMDXKeyIndex, ripemd128 } from '../Utils/Algorithem.js'
 import { parseXml } from '../Utils/XMLUtil.js'
 import { type HeaderXmlObject } from '../common/MDXEntities.js'
 import * as zlib from 'zlib'
@@ -81,15 +81,21 @@ async function parseKeyWordSect(buff: ArrayBuffer, headerMeta: HeaderXmlObject) 
         console.log("This dict is encrypted, and is not supported now.");
         throw new Error("Encrypted dicts are not supported");
     }
-    await parseKeywordIndex(buff.slice(checksumLastByte, checksumLastByte + (encryptedHeadValue & 0b10 ? Number(lengthOfKeyIndexComp) : Number(lengthOfKeyIndexDecop))), headerMeta);
+    const keyIndexEncrypted: boolean = Boolean(encryptedHeadValue & 0b10);
+    await parseKeywordIndex(buff.slice(checksumLastByte, checksumLastByte + (keyIndexEncrypted ? Number(lengthOfKeyIndexComp) : Number(lengthOfKeyIndexDecop))), headerMeta, keyIndexEncrypted);
 }
 
-async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject) {
+async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject, encrypted: boolean = false) {
     const compTypeBytes = buff.slice(0, compressionMeta.compTypeLength);
     const checksumLastByte = compressionMeta.compTypeLength + compressionMeta.checksumLength;
     const checksumBytes = buff.slice(compressionMeta.compTypeLength, checksumLastByte);
-    const calAdler32Value = adler32Cal(new Uint8Array(checksumBytes), true);
-    const compressedData = buff.slice(checksumLastByte);
+    const calAdler32Value = await adler32Cal(new Uint8Array(checksumBytes), true);
+    let compressedData = buff.slice(checksumLastByte);
+    if (encrypted) {
+        const key = calAdler32Value + "\x95\x36\x00\x00";
+        const decryptKey = ripemd128(key);
+        compressedData = decryptMDXKeyIndex(compressedData, decryptKey);
+    }
     const compType = readAsBigEndianNumber(compTypeBytes.slice(0, 1));
     const decompressedData = await decompress(compressedData, compType);
     const numberOfKeywords = readAsBigEndianBigInt(decompressedData.slice(0, 8));

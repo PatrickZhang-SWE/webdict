@@ -36,7 +36,7 @@ function readAsLittleNumber(buff: ArrayBuffer): number {
 function flipArrayEndianness(buff: ArrayBuffer): ArrayBuffer {
     const length = buff.byteLength;
     const view = new DataView(buff);
-    for(let i=0, j=length-1; i < j; i++, j--) {
+    for (let i = 0, j = length - 1; i < j; i++, j--) {
         const tmp = view.getUint8(i);
         view.setUint8(i, view.getUint8(j));
         view.setUint8(j, tmp);
@@ -44,4 +44,4 @@ function flipArrayEndianness(buff: ArrayBuffer): ArrayBuffer {
     return view.buffer;
 }
 
-export {isLittleEndian, readAsBigEndianNumber, readAsLittleStr, readAsLittleNumber, flipArrayEndianness, readAsBigEndianBigInt}
+export { isLittleEndian, readAsBigEndianNumber, readAsLittleStr, readAsLittleNumber, flipArrayEndianness, readAsBigEndianBigInt }
