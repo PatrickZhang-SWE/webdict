@@ -1,6 +1,6 @@
 import { createAdler32 } from 'hash-wasm'
 import { flipArrayEndianness } from './Endianness.js'
-import crypto from 'crypto';
+import { ripemd128 as ripemd128Cal }  from './ripemd128.js'
 
 async function adler32Cal(buff: Uint8Array, bigEndian?: boolean) {
     const adler32Instance = await createAdler32()
@@ -26,14 +26,12 @@ function decryptMDXKeyIndex(buff: ArrayBuffer, decipher: ArrayBuffer) {
         prev = encryptedView.getUint8(i);
         encryptedView.setUint8(i, tmp);
     }
-    return buff;
+    return encryptedView.buffer;
 }
 
-function ripemd128(message: string): Uint8Array {
-    console.log(crypto.getHashes());
-    const hash = crypto.createHash('ripemd128');
-    hash.update(message);
-    return new Uint8Array(hash.digest());
+function ripemd128(buff: ArrayBuffer) {
+    return ripemd128Cal(buff);
 }
+
 
 export { adler32Cal, decryptMDXKeyIndex, ripemd128 }

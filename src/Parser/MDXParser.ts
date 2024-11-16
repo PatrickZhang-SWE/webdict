@@ -26,6 +26,14 @@ const compressionMeta = {
     checksumLength: 4,
 }
 
+const keywordIndexMeta = {
+    numOfEntriesBytes: 8,
+    firstWordSizeBytes: 2,
+    lastWordSizeBytes: 2,
+    compressedSizeBytes: 8,
+    decompressedSizeBytes: 8,
+}
+
 async function parse(buff: ArrayBuffer) {
     const totalLength = buff.byteLength;
     if (totalLength <= 0) {
@@ -92,14 +100,29 @@ async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject,
     const calAdler32Value = await adler32Cal(new Uint8Array(checksumBytes), true);
     let compressedData = buff.slice(checksumLastByte);
     if (encrypted) {
-        const key = calAdler32Value + "\x95\x36\x00\x00";
-        const decryptKey = ripemd128(key);
-        compressedData = decryptMDXKeyIndex(compressedData, decryptKey);
+        const keyBytes = new Uint8Array(compressionMeta.checksumLength + 4);
+        keyBytes.set(new Uint8Array(checksumBytes));
+        keyBytes.set([+'0x95', +'0x36', +'0x00', +'0x00'], compressionMeta.checksumLength);
+        const decryptKey = ripemd128(keyBytes);
+        compressedData = decryptMDXKeyIndex(compressedData, decryptKey.buffer);
     }
     const compType = readAsBigEndianNumber(compTypeBytes.slice(0, 1));
     const decompressedData = await decompress(compressedData, compType);
-    const numberOfKeywords = readAsBigEndianBigInt(decompressedData.slice(0, 8));
-    const lengthOfFirstKeyword = readAsBigEndianNumber(decompressedData.slice(8, 10));
+    const numberOfKeywords = readAsBigEndianBigInt(decompressedData.slice(0, keywordIndexMeta.numOfEntriesBytes));
+    const lengthOfFirstKeyword = readAsBigEndianNumber(decompressedData.slice(keywordIndexMeta.numOfEntriesBytes, keywordIndexMeta.numOfEntriesBytes + keywordIndexMeta.firstWordSizeBytes));
+    const firstWordStartSlice = keywordIndexMeta.numOfEntriesBytes + keywordIndexMeta.firstWordSizeBytes;
+    let firstWorkEndSlice = firstWordStartSlice + lengthOfFirstKeyword;
+    const firstWork = Buffer.from(decompressedData.slice(firstWordStartSlice, firstWorkEndSlice)).toString(headerMeta.Encoding as BufferEncoding);
+    console.log("First keyword: %s", firstWork);
+    while(Buffer.from(decompressedData.slice(firstWorkEndSlice, firstWorkEndSlice + 1)).toString('hex') === "00") {
+        firstWorkEndSlice += 1;
+    }
+    const lengthOfLastKeyword = readAsBigEndianNumber(decompressedData.slice(firstWorkEndSlice, firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes));
+    const lastWordStartSlice = firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes;
+    const lastWordEndSlice = lastWordStartSlice + lengthOfLastKeyword;
+    const lastWork = Buffer.from(decompressedData.slice(lastWordStartSlice, lastWordEndSlice)).toString(headerMeta.Encoding as BufferEncoding);
+    console.log("Last keyword: %s", lastWork);
+
 }
 
 async function decompress(compressedData: ArrayBuffer, compressType: number) {
@@ -113,7 +136,7 @@ async function decompress(compressedData: ArrayBuffer, compressType: number) {
     }
     if (compressType === 0x02) {
         console.log("zlib compression is used.");
-        return (await util.promisify(zlib.unzip)(compressedData.slice(4))).buffer;
+        return (await util.promisify(zlib.unzip)(compressedData)).buffer;
     }
     throw new Error("LZO compression is not supported");
 }
