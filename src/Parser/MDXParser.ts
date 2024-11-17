@@ -109,18 +109,33 @@ async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject,
     const compType = readAsBigEndianNumber(compTypeBytes.slice(0, 1));
     const decompressedData = await decompress(compressedData, compType);
     const numberOfKeywords = readAsBigEndianBigInt(decompressedData.slice(0, keywordIndexMeta.numOfEntriesBytes));
+    const encodingWith = widthOfEncoding(headerMeta.Encoding as BufferEncoding);
     const lengthOfFirstKeyword = readAsBigEndianNumber(decompressedData.slice(keywordIndexMeta.numOfEntriesBytes, keywordIndexMeta.numOfEntriesBytes + keywordIndexMeta.firstWordSizeBytes));
     const firstWordStartSlice = keywordIndexMeta.numOfEntriesBytes + keywordIndexMeta.firstWordSizeBytes;
-    let firstWorkEndSlice = firstWordStartSlice + lengthOfFirstKeyword;
+    let firstWorkEndSlice = firstWordStartSlice + lengthOfFirstKeyword * encodingWith;
     const firstWork = Buffer.from(decompressedData.slice(firstWordStartSlice, firstWorkEndSlice)).toString(headerMeta.Encoding as BufferEncoding);
     console.log("First keyword: %s", firstWork);
-    firstWorkEndSlice += 1;
+    firstWorkEndSlice += encodingWith;
     const lengthOfLastKeyword = readAsBigEndianNumber(decompressedData.slice(firstWorkEndSlice, firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes));
     const lastWordStartSlice = firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes;
     const lastWordEndSlice = lastWordStartSlice + lengthOfLastKeyword;
     const lastWork = Buffer.from(decompressedData.slice(lastWordStartSlice, lastWordEndSlice)).toString(headerMeta.Encoding as BufferEncoding);
     console.log("Last keyword: %s", lastWork);
 
+}
+
+function widthOfEncoding(encoding: BufferEncoding) {
+    switch(encoding) {
+        case 'utf8':
+            return 1;
+        case 'utf-8':
+            return 1;
+        case 'utf16le':
+            return 2;
+        case 'utf-16le':
+            return 2;
+    }
+    throw new Error("Encoding is not supported");
 }
 
 async function decompress(compressedData: ArrayBuffer, compressType: number) {
