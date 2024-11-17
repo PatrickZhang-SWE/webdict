@@ -114,9 +114,7 @@ async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject,
     let firstWorkEndSlice = firstWordStartSlice + lengthOfFirstKeyword;
     const firstWork = Buffer.from(decompressedData.slice(firstWordStartSlice, firstWorkEndSlice)).toString(headerMeta.Encoding as BufferEncoding);
     console.log("First keyword: %s", firstWork);
-    while(Buffer.from(decompressedData.slice(firstWorkEndSlice, firstWorkEndSlice + 1)).toString('hex') === "00") {
-        firstWorkEndSlice += 1;
-    }
+    firstWorkEndSlice += 1;
     const lengthOfLastKeyword = readAsBigEndianNumber(decompressedData.slice(firstWorkEndSlice, firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes));
     const lastWordStartSlice = firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes;
     const lastWordEndSlice = lastWordStartSlice + lengthOfLastKeyword;
