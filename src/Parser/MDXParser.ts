@@ -34,6 +34,16 @@ const keywordIndexMeta = {
     decompressedSizeBytes: 8,
 }
 
+interface KeyIndexItem {
+    numberOfEntries: number,
+    firstWordSize: number,
+    firstWord: string,
+    lastWordSize: number,
+    lastWord: string,
+    compressedSize: number,
+    decompressedSize: number,
+}
+
 async function parse(buff: ArrayBuffer) {
     const totalLength = buff.byteLength;
     if (totalLength <= 0) {
@@ -90,14 +100,14 @@ async function parseKeyWordSect(buff: ArrayBuffer, headerMeta: HeaderXmlObject) 
         throw new Error("Encrypted dicts are not supported");
     }
     const keyIndexEncrypted: boolean = Boolean(encryptedHeadValue & 0b10);
-    await parseKeywordIndex(buff.slice(checksumLastByte, checksumLastByte + (keyIndexEncrypted ? Number(lengthOfKeyIndexComp) : Number(lengthOfKeyIndexDecop))), headerMeta, keyIndexEncrypted);
+    await parseKeywordIndex(buff.slice(checksumLastByte, checksumLastByte + (keyIndexEncrypted ? Number(lengthOfKeyIndexComp) : Number(lengthOfKeyIndexDecop))), headerMeta, Number(lengthOfKeyIndexDecop),  keyIndexEncrypted);
 }
 
-async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject, encrypted: boolean = false) {
+async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject, decompressedSize: number,  encrypted: boolean = false) {
     const compTypeBytes = buff.slice(0, compressionMeta.compTypeLength);
     const checksumLastByte = compressionMeta.compTypeLength + compressionMeta.checksumLength;
     const checksumBytes = buff.slice(compressionMeta.compTypeLength, checksumLastByte);
-    const calAdler32Value = await adler32Cal(new Uint8Array(checksumBytes), true);
+    const storedAdler32Value = Buffer.from(checksumBytes).toString('hex');
     let compressedData = buff.slice(checksumLastByte);
     if (encrypted) {
         const keyBytes = new Uint8Array(compressionMeta.checksumLength + 4);
@@ -108,20 +118,55 @@ async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject,
     }
     const compType = readAsBigEndianNumber(compTypeBytes.slice(0, 1));
     const decompressedData = await decompress(compressedData, compType);
-    const numberOfKeywords = readAsBigEndianBigInt(decompressedData.slice(0, keywordIndexMeta.numOfEntriesBytes));
-    const encodingWith = widthOfEncoding(headerMeta.Encoding as BufferEncoding);
-    const lengthOfFirstKeyword = readAsBigEndianNumber(decompressedData.slice(keywordIndexMeta.numOfEntriesBytes, keywordIndexMeta.numOfEntriesBytes + keywordIndexMeta.firstWordSizeBytes));
-    const firstWordStartSlice = keywordIndexMeta.numOfEntriesBytes + keywordIndexMeta.firstWordSizeBytes;
-    let firstWorkEndSlice = firstWordStartSlice + lengthOfFirstKeyword * encodingWith;
-    const firstWork = Buffer.from(decompressedData.slice(firstWordStartSlice, firstWorkEndSlice)).toString(headerMeta.Encoding as BufferEncoding);
-    console.log("First keyword: %s", firstWork);
-    firstWorkEndSlice += encodingWith;
-    const lengthOfLastKeyword = readAsBigEndianNumber(decompressedData.slice(firstWorkEndSlice, firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes));
-    const lastWordStartSlice = firstWorkEndSlice + keywordIndexMeta.lastWordSizeBytes;
-    const lastWordEndSlice = lastWordStartSlice + lengthOfLastKeyword;
-    const lastWork = Buffer.from(decompressedData.slice(lastWordStartSlice, lastWordEndSlice)).toString(headerMeta.Encoding as BufferEncoding);
-    console.log("Last keyword: %s", lastWork);
+    const checkSum = await calKeyIndexChecksum(decompressedData, compressedData, compType);
+    if (checkSum !== storedAdler32Value) {
+        console.log('cal: %s, store: %s', checkSum, storedAdler32Value);
+        throw new Error("keyword index checksum is not validated.");
+    }
+    let baseIndex = 0;
+    const encodingLowCase = headerMeta.Encoding.toLocaleLowerCase();
+    let keyIndexInfo: KeyIndexItem[] = [];
+    const wordWidth = widthOfEncoding(encodingLowCase as BufferEncoding);
+    while (baseIndex < decompressedSize) {
+        const numOfEntries = readAsBigEndianBigInt(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.numOfEntriesBytes));
+        baseIndex += keywordIndexMeta.numOfEntriesBytes;
+        const firstWordSize = readAsBigEndianNumber(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.firstWordSizeBytes));
+        baseIndex += keywordIndexMeta.firstWordSizeBytes;
+        const firstWord = Buffer.from(decompressedData.slice(baseIndex, baseIndex + firstWordSize * wordWidth)).toString(encodingLowCase as BufferEncoding);
+        baseIndex += firstWordSize * wordWidth + wordWidth;
+        const lastWordSize= readAsBigEndianNumber(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.lastWordSizeBytes));
+        baseIndex += keywordIndexMeta.lastWordSizeBytes;
+        const lastWord = Buffer.from(decompressedData.slice(baseIndex, baseIndex + lastWordSize * wordWidth)).toString(encodingLowCase as BufferEncoding);
+        console.log("last word is: %s", lastWord);
+        baseIndex += lastWordSize * wordWidth + wordWidth;
+        const compSize = readAsBigEndianBigInt(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.compressedSizeBytes));
+        baseIndex += keywordIndexMeta.compressedSizeBytes;
+        const decompSize = readAsBigEndianBigInt(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.decompressedSizeBytes));
+        baseIndex += keywordIndexMeta.decompressedSizeBytes;
+        console.log("kwyword start from %s, end at %s, baseIndex: %d", firstWord, lastWord, baseIndex);
+        keyIndexInfo.push({
+            numberOfEntries: Number(numOfEntries),
+            firstWordSize: firstWordSize,
+            firstWord: firstWord,
+            lastWordSize: lastWordSize,
+            lastWord: lastWord,
+            compressedSize: Number(compSize),
+            decompressedSize: Number(decompSize),
+        })
+    }
+    return keyIndexInfo;
+}
 
+async function calKeyIndexChecksum(decompressedData: ArrayBuffer, compressedData: ArrayBuffer, compType: number) {
+    switch(compType) {
+        case 0:
+        case 1:
+            return await adler32Cal(new Uint8Array(decompressedData), true);
+        case 2:
+            const buffLength = compressedData.byteLength;
+            return Buffer.from(compressedData.slice(buffLength - 4)).toString('hex');
+    }
+    adler32Cal(new Uint8Array(compressedData), true);
 }
 
 function widthOfEncoding(encoding: BufferEncoding) {
