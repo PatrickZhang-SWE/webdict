@@ -34,6 +34,12 @@ const keywordIndexMeta = {
     decompressedSizeBytes: 8,
 }
 
+interface CompressionItem {
+    compType: number,
+    checksum: ArrayBuffer,
+    compressedData: ArrayBuffer
+}
+
 interface KeyIndexItem {
     numberOfEntries: number,
     firstWordSize: number,
@@ -42,6 +48,11 @@ interface KeyIndexItem {
     lastWord: string,
     compressedSize: number,
     decompressedSize: number,
+}
+
+interface KeyBlockItem {
+    offset: number,
+    key: string,
 }
 
 async function parse(buff: ArrayBuffer) {
@@ -100,15 +111,34 @@ async function parseKeyWordSect(buff: ArrayBuffer, headerMeta: HeaderXmlObject) 
         throw new Error("Encrypted dicts are not supported");
     }
     const keyIndexEncrypted: boolean = Boolean(encryptedHeadValue & 0b10);
-    await parseKeywordIndex(buff.slice(checksumLastByte, checksumLastByte + (keyIndexEncrypted ? Number(lengthOfKeyIndexComp) : Number(lengthOfKeyIndexDecop))), headerMeta, Number(lengthOfKeyIndexDecop),  keyIndexEncrypted);
+    const keyIndexActualLength = keyIndexEncrypted ? Number(lengthOfKeyIndexComp) : Number(lengthOfKeyIndexDecop);
+    const keyIndex = await parseKeywordIndex(buff.slice(checksumLastByte, checksumLastByte + keyIndexActualLength), headerMeta.Encoding.toLocaleLowerCase() as BufferEncoding, Number(lengthOfKeyIndexDecop),  keyIndexEncrypted);
+    if (Number(numberOfBlocks) !== keyIndex.length) {
+        console.log(`The number of blocks in head meat is ${numberOfBlocks}, but the number of blocks in key index is ${keyIndex.length}.`);
+        throw new Error(`The number of blocks in head meat is ${numberOfBlocks}, but the number of blocks in key index is ${keyIndex.length}.`);
+    }
+    let offset = checksumLastByte + keyIndexActualLength;
+    const keywordResult: KeyBlockItem[] = [];
+    for (const item of keyIndex) {
+        const keyBlockCompSize = item.compressedSize;
+        const keyBlockDecompSize = item.decompressedSize;
+        const keyBlockBuff = buff.slice(offset, offset + keyBlockCompSize);
+        offset += keyBlockCompSize;
+        const keyblockResult = await parseKeyBlock(keyBlockBuff, keyBlockDecompSize, headerMeta.Encoding.toLocaleLowerCase() as BufferEncoding);
+        keywordResult.push(...keyblockResult);
+    }
+    if (Number(numberOfEntries) !== keywordResult.length) {
+        console.log(`The number of entries in head meat is ${numberOfEntries}, but the number of entries in key block is ${keywordResult.length}.`);
+        throw new Error(`The number of entries in head meat is ${numberOfEntries}, but the number of entries in key block is ${keywordResult.length}.`);
+    }
+    return keywordResult;
 }
 
-async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject, decompressedSize: number,  encrypted: boolean = false) {
-    const compTypeBytes = buff.slice(0, compressionMeta.compTypeLength);
-    const checksumLastByte = compressionMeta.compTypeLength + compressionMeta.checksumLength;
-    const checksumBytes = buff.slice(compressionMeta.compTypeLength, checksumLastByte);
+async function parseKeywordIndex(buff: ArrayBuffer, encoding: BufferEncoding, decompressedSize: number,  encrypted: boolean = false) {
+    const compressionItem = generateCompresssionItem(buff);
+    const checksumBytes = compressionItem.checksum;
     const storedAdler32Value = Buffer.from(checksumBytes).toString('hex');
-    let compressedData = buff.slice(checksumLastByte);
+    let compressedData = compressionItem.compressedData;
     if (encrypted) {
         const keyBytes = new Uint8Array(compressionMeta.checksumLength + 4);
         keyBytes.set(new Uint8Array(checksumBytes));
@@ -116,7 +146,7 @@ async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject,
         const decryptKey = ripemd128(keyBytes);
         compressedData = decryptMDXKeyIndex(compressedData, decryptKey.buffer);
     }
-    const compType = readAsBigEndianNumber(compTypeBytes.slice(0, 1));
+    const compType = compressionItem.compType;
     const decompressedData = await decompress(compressedData, compType);
     const checkSum = await calKeyIndexChecksum(decompressedData, compressedData, compType);
     if (checkSum !== storedAdler32Value) {
@@ -124,19 +154,18 @@ async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject,
         throw new Error("keyword index checksum is not validated.");
     }
     let baseIndex = 0;
-    const encodingLowCase = headerMeta.Encoding.toLocaleLowerCase();
     let keyIndexInfo: KeyIndexItem[] = [];
-    const wordWidth = widthOfEncoding(encodingLowCase as BufferEncoding);
+    const wordWidth = widthOfEncoding(encoding);
     while (baseIndex < decompressedSize) {
         const numOfEntries = readAsBigEndianBigInt(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.numOfEntriesBytes));
         baseIndex += keywordIndexMeta.numOfEntriesBytes;
         const firstWordSize = readAsBigEndianNumber(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.firstWordSizeBytes));
         baseIndex += keywordIndexMeta.firstWordSizeBytes;
-        const firstWord = Buffer.from(decompressedData.slice(baseIndex, baseIndex + firstWordSize * wordWidth)).toString(encodingLowCase as BufferEncoding);
+        const firstWord = Buffer.from(decompressedData.slice(baseIndex, baseIndex + firstWordSize * wordWidth)).toString(encoding);
         baseIndex += firstWordSize * wordWidth + wordWidth;
         const lastWordSize= readAsBigEndianNumber(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.lastWordSizeBytes));
         baseIndex += keywordIndexMeta.lastWordSizeBytes;
-        const lastWord = Buffer.from(decompressedData.slice(baseIndex, baseIndex + lastWordSize * wordWidth)).toString(encodingLowCase as BufferEncoding);
+        const lastWord = Buffer.from(decompressedData.slice(baseIndex, baseIndex + lastWordSize * wordWidth)).toString(encoding);
         console.log("last word is: %s", lastWord);
         baseIndex += lastWordSize * wordWidth + wordWidth;
         const compSize = readAsBigEndianBigInt(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.compressedSizeBytes));
@@ -155,6 +184,43 @@ async function parseKeywordIndex(buff: ArrayBuffer, headerMeta: HeaderXmlObject,
         })
     }
     return keyIndexInfo;
+}
+
+async function parseKeyBlock(buff: ArrayBuffer,decompressedSize: number, encoding: BufferEncoding) {
+    const compressionItem = generateCompresssionItem(buff);
+    const compType = compressionItem.compType;
+    const decompressedData = await decompress(compressionItem.compressedData, compType);
+    let offset = 0;
+    const wordWidth = widthOfEncoding(encoding);
+    const keyblockResult: KeyBlockItem[] = [];
+    while (offset < decompressedSize) {
+        const keyOffset = readAsBigEndianBigInt(decompressedData.slice(offset, offset + 8));
+        offset += 8;
+        let keyEndByte = offset;
+        while (readAsBigEndianNumber(decompressedData.slice(keyEndByte, keyEndByte + wordWidth)) !== 0) {
+            keyEndByte += wordWidth;
+        }
+        const key = Buffer.from(decompressedData.slice(offset, keyEndByte)).toString(encoding);
+        console.log("key is: %s, offset is: %d", key, keyOffset);
+        offset = keyEndByte + wordWidth;
+        keyblockResult.push({
+            offset: Number(keyOffset),
+            key: key
+        })
+    }
+    return keyblockResult;
+}
+
+function generateCompresssionItem(buff: ArrayBuffer): CompressionItem {
+    const compTypeBytes = buff.slice(0, compressionMeta.compTypeLength);
+    const checksumLastByte = compressionMeta.compTypeLength + compressionMeta.checksumLength;
+    const checksumBytes = buff.slice(compressionMeta.compTypeLength, checksumLastByte);
+    const compressedData = buff.slice(checksumLastByte);
+    return {
+        compType: readAsBigEndianNumber(compTypeBytes.slice(0, 1)),
+        checksum: checksumBytes,
+        compressedData
+    }
 }
 
 async function calKeyIndexChecksum(decompressedData: ArrayBuffer, compressedData: ArrayBuffer, compType: number) {
