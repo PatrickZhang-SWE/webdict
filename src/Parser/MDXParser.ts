@@ -52,7 +52,18 @@ interface KeyIndexItem {
 
 interface KeyBlockItem {
     offset: number,
+    length: number,
     key: string,
+}
+
+interface keywordSectItem {
+    length: number,
+    keys: KeyBlockItem[],
+}
+
+interface RecordItem {
+    startOffSet: number,
+    content: string,
 }
 
 async function parse(buff: ArrayBuffer) {
@@ -65,7 +76,16 @@ async function parse(buff: ArrayBuffer) {
     const headerLength = headerSectMeta.length + headerStrLength + headerSectMeta.checkSum;
     const headerObject = await parseHeaderSect(buff.slice(0, headerLength), headerStrLength, headerLength);
     const keyWordSectPart = buff.slice(headerLength);
-    await parseKeyWordSect(keyWordSectPart, headerObject);
+    const keywordSect = await parseKeyWordSect(keyWordSectPart, headerObject);
+    const recordSetPart = buff.slice(headerLength + keywordSect.length);
+    const recordDecompBlocks = await parseRecordSection(recordSetPart);
+    keywordSect.keys.forEach((item, index) => {
+        const offset = item.offset;
+        const key = item.key;
+        const length = item.length;
+        const record = Buffer.from(recordDecompBlocks.slice(offset, offset + length)).toString(headerObject.Encoding as BufferEncoding);
+        console.log("key: %s, record: %s", key, record);
+    });
     return new Array();
 }
 
@@ -82,7 +102,7 @@ async function parseHeaderSect(buff: ArrayBuffer, headerStrLength: number, lengt
     return convertParsedHeaderStr(parsedXml.Dictionary);
 }
 
-async function parseKeyWordSect(buff: ArrayBuffer, headerMeta: HeaderXmlObject) {
+async function parseKeyWordSect(buff: ArrayBuffer, headerMeta: HeaderXmlObject): Promise<keywordSectItem> {
     const numberOfBlocks = readAsBigEndianBigInt(buff.slice(0, keywordSectMeta.numBlocksLength));
     const entriesLastByte = keywordSectMeta.numBlocksLength + keywordSectMeta.numEntrieslength;
     const numberOfEntries = readAsBigEndianBigInt(buff.slice(keywordSectMeta.numBlocksLength, entriesLastByte));
@@ -131,7 +151,10 @@ async function parseKeyWordSect(buff: ArrayBuffer, headerMeta: HeaderXmlObject) 
         console.log(`The number of entries in head meat is ${numberOfEntries}, but the number of entries in key block is ${keywordResult.length}.`);
         throw new Error(`The number of entries in head meat is ${numberOfEntries}, but the number of entries in key block is ${keywordResult.length}.`);
     }
-    return keywordResult;
+    return {
+        length: Number(lengthOfKeyBlocks) + keyIndexActualLength + keywordSectMeta.numBlocksLength + keywordSectMeta.numEntrieslength + keywordSectMeta.keyIndexDecopLength + keywordSectMeta.keyIndexCmpLength + keywordSectMeta.keyBlocksLength + keywordSectMeta.checksumLength,
+        keys: keywordResult
+    };
 }
 
 async function parseKeywordIndex(buff: ArrayBuffer, encoding: BufferEncoding, decompressedSize: number,  encrypted: boolean = false) {
@@ -148,7 +171,7 @@ async function parseKeywordIndex(buff: ArrayBuffer, encoding: BufferEncoding, de
     }
     const compType = compressionItem.compType;
     const decompressedData = await decompress(compressedData, compType);
-    const checkSum = await calKeyIndexChecksum(decompressedData, compressedData, compType);
+    const checkSum = await calChecksum(decompressedData, compressedData, compType);
     if (checkSum !== storedAdler32Value) {
         console.log('cal: %s, store: %s', checkSum, storedAdler32Value);
         throw new Error("keyword index checksum is not validated.");
@@ -205,10 +228,51 @@ async function parseKeyBlock(buff: ArrayBuffer,decompressedSize: number, encodin
         offset = keyEndByte + wordWidth;
         keyblockResult.push({
             offset: Number(keyOffset),
+            length: 0,
             key: key
         })
     }
+    keyblockResult.forEach((item, index) => {
+        if (index + 1 < keyblockResult.length) {
+            item.length = keyblockResult[index + 1].offset - item.offset;
+        } else {
+            item.length = decompressedSize - item.offset;
+        }
+    });
     return keyblockResult;
+}
+
+async function parseRecordSection(buff: ArrayBuffer): Promise<ArrayBuffer> {
+    let currentOffset = 0;
+    const numberOfBlocks = readAsBigEndianBigInt(buff.slice(currentOffset, currentOffset + 8));
+    currentOffset += 8;
+    const numberOfEntries = readAsBigEndianBigInt(buff.slice(currentOffset, currentOffset + 8));
+    currentOffset += 8;
+    const indexLength = readAsBigEndianBigInt(buff.slice(currentOffset, currentOffset + 8));
+    currentOffset += 8;
+    const blockLen = readAsBigEndianBigInt(buff.slice(currentOffset, currentOffset + 8));
+    currentOffset += 8;
+    const recordBlockBuff = buff.slice(currentOffset + Number(indexLength));
+    let recordBlockOffset = 0;
+    let decompressedBuff = new Uint8Array(0);
+    for (let i = 0; i < Number(numberOfBlocks); i++) {
+        const compressedSize = readAsBigEndianBigInt(buff.slice(currentOffset, currentOffset + 8));
+        currentOffset += 8;
+        const decompressedSize = readAsBigEndianBigInt(buff.slice(currentOffset, currentOffset + 8));
+        currentOffset += 8;
+        const recordData = recordBlockBuff.slice(recordBlockOffset, recordBlockOffset + Number(compressedSize));
+        recordBlockOffset += Number(compressedSize);
+        const compressionItem = generateCompresssionItem(recordData);
+        const compType = compressionItem.compType;
+        const decompressedData = await decompress(compressionItem.compressedData, compType);
+        const checkSum = await calChecksum(decompressedData, compressionItem.compressedData, compType);
+        if (checkSum !== Buffer.from(compressionItem.checksum).toString('hex')) {
+            console.log("Record checksum is not validated.");
+            throw new Error("Record checksum is not validated.");
+        }
+        decompressedBuff = Buffer.concat([decompressedBuff, new Uint8Array(decompressedData)]);
+    }
+    return decompressedBuff;
 }
 
 function generateCompresssionItem(buff: ArrayBuffer): CompressionItem {
@@ -223,7 +287,7 @@ function generateCompresssionItem(buff: ArrayBuffer): CompressionItem {
     }
 }
 
-async function calKeyIndexChecksum(decompressedData: ArrayBuffer, compressedData: ArrayBuffer, compType: number) {
+async function calChecksum(decompressedData: ArrayBuffer, compressedData: ArrayBuffer, compType: number) {
     switch(compType) {
         case 0:
         case 1:
@@ -232,7 +296,7 @@ async function calKeyIndexChecksum(decompressedData: ArrayBuffer, compressedData
             const buffLength = compressedData.byteLength;
             return Buffer.from(compressedData.slice(buffLength - 4)).toString('hex');
     }
-    adler32Cal(new Uint8Array(compressedData), true);
+    return adler32Cal(new Uint8Array(compressedData), true);
 }
 
 function widthOfEncoding(encoding: BufferEncoding) {
