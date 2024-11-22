@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
-import { parse } from './Parser/MDXParser.js'
+import { parse } from './Parser/ParserManagement.js'
+import { stringBufferToString } from 'hono/utils/html'
 
 const app = new Hono()
 
@@ -8,12 +9,16 @@ app.get('/', (c) => {
   return c.text('Hello Hono!')
 })
 
-app.post('/admin/dict/upload', async (c) => {
+app.post('/v1/admin/dict/upload', async (c) => {
   const body = await c.req.parseBody();
+  const fileType = body['fileType'];
   let data = body['file'];
   if (data instanceof File) {
     const buffer = await data.arrayBuffer();
-    await parse(buffer);
+    if (typeof fileType !== 'string') {
+      return c.body('No file type.')
+    }
+    await parse(fileType, buffer);
     return c.body('Process Successfully.')
   } else {
     return c.body(`Not supported ${data}`)

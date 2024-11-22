@@ -79,14 +79,15 @@ async function parse(buff: ArrayBuffer) {
     const keywordSect = await parseKeyWordSect(keyWordSectPart, headerObject);
     const recordSetPart = buff.slice(headerLength + keywordSect.length);
     const recordDecompBlocks = await parseRecordSection(recordSetPart);
+    const parseResult: ParserResultText[] = [];
     keywordSect.keys.forEach((item, index) => {
         const offset = item.offset;
         const key = item.key;
         const length = item.length;
         const record = Buffer.from(recordDecompBlocks.slice(offset, offset + length)).toString(headerObject.Encoding as BufferEncoding);
-        console.log("key: %s, record: %s", key, record);
+        parseResult.push({ keyword: key, record: record });
     });
-    return new Array();
+    return parseResult;
 }
 
 async function parseHeaderSect(buff: ArrayBuffer, headerStrLength: number, length: number) {
@@ -195,7 +196,6 @@ async function parseKeywordIndex(buff: ArrayBuffer, encoding: BufferEncoding, de
         baseIndex += keywordIndexMeta.compressedSizeBytes;
         const decompSize = readAsBigEndianBigInt(decompressedData.slice(baseIndex, baseIndex + keywordIndexMeta.decompressedSizeBytes));
         baseIndex += keywordIndexMeta.decompressedSizeBytes;
-        console.log("kwyword start from %s, end at %s, baseIndex: %d", firstWord, lastWord, baseIndex);
         keyIndexInfo.push({
             numberOfEntries: Number(numOfEntries),
             firstWordSize: firstWordSize,
@@ -224,7 +224,6 @@ async function parseKeyBlock(buff: ArrayBuffer,decompressedSize: number, encodin
             keyEndByte += wordWidth;
         }
         const key = Buffer.from(decompressedData.slice(offset, keyEndByte)).toString(encoding);
-        console.log("key is: %s, offset is: %d", key, keyOffset);
         offset = keyEndByte + wordWidth;
         keyblockResult.push({
             offset: Number(keyOffset),
