@@ -1,4 +1,6 @@
-import { type ParserResultText } from './ParserResult.js'
+import { type ParserResultText } from '../common/ParserResult.js'
+import { type DictInfo } from '../common/DictInfo.js'
+import { getRecordFormat } from '../common/RecordFormat.js'
 import { readAsBigEndianNumber, readAsLittleStr, readAsLittleNumber, readAsBigEndianBigInt } from '../Utils/Endianness.js'
 import { adler32Cal, decryptMDXKeyIndex, ripemd128 } from '../Utils/Algorithem.js'
 import { parseXml } from '../Utils/XMLUtil.js'
@@ -64,6 +66,19 @@ interface keywordSectItem {
 interface RecordItem {
     startOffSet: number,
     content: string,
+}
+
+async function getDictInfo(buff: ArrayBuffer): Promise<DictInfo> {
+    const headerSectLengthPart = buff.slice(0, headerSectMeta.length);
+    const headerStrLength = readAsBigEndianNumber(headerSectLengthPart);
+    const headerLength = headerSectMeta.length + headerStrLength + headerSectMeta.checkSum;
+    const headerObject = await parseHeaderSect(buff.slice(0, headerLength), headerStrLength, headerLength);
+    return {
+        name: headerObject.Title,
+        keywordLanguage: 0,
+        recordLanguage: 0,
+        recordFormat: getRecordFormat(headerObject.Encoding).id,
+    }
 }
 
 async function parse(buff: ArrayBuffer) {
@@ -349,4 +364,4 @@ function convertParsedHeaderStr(parsedXml: any): HeaderXmlObject {
     }
 }
 
-export { parse }
+export { parse , getDictInfo }
