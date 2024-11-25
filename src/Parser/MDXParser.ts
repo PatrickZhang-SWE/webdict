@@ -74,6 +74,7 @@ async function getDictInfo(buff: ArrayBuffer): Promise<DictInfo> {
     const headerLength = headerSectMeta.length + headerStrLength + headerSectMeta.checkSum;
     const headerObject = await parseHeaderSect(buff.slice(0, headerLength), headerStrLength, headerLength);
     return {
+        id: -1,
         name: headerObject.Title,
         keywordLanguage: 0,
         recordLanguage: 0,
