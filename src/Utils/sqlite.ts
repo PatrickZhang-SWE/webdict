@@ -53,18 +53,26 @@ export async function addDict(dictInfo: DictInfo) {
 }
 
 export async function addRecords(keyRecordPairs: ParserResultText[] | ParserResultBinary[], dictInfo: DictInfo) {
-    const statement = `INSERT INTO ${recordsTableName} (dictId, keyword, record, recordFormat, updateTime, createTime)
-                       VALUES (?, ?, ?, ?, ?, ?)`;
-    const batch = await db.prepare(statement);
-    batch.run('PRAGMA synchronous = OFF');
     for (let i = 0; i < keyRecordPairs.length; i += chunkSize) {
+        let statement = `INSERT INTO ${recordsTableName} (dictId, keyword, record, recordFormat, updateTime, createTime)
+                       VALUES`;
         const slicedKeyRecordPairs = keyRecordPairs.slice(i, i + chunkSize > keyRecordPairs.length? keyRecordPairs.length: i + chunkSize);
-        await Promise.all(slicedKeyRecordPairs.map(keyRecordPair => {
-            return batch.run(dictInfo.id, keyRecordPair.keyword, keyRecordPair.record, dictInfo.recordFormat, Date.now(), Date.now());
-        }));
-        await batch.run('COMMIT');
+        const params: any = [];
+        slicedKeyRecordPairs.forEach((keyRecordPair, index) => {
+            index === slicedKeyRecordPairs.length - 1? statement += ' (?, ?, ?, ?, ?, ?)': statement += ' (?, ?, ?, ?, ?, ?),';
+            params.push(
+                dictInfo.id,
+                keyRecordPair.keyword,
+                keyRecordPair.record,
+                dictInfo.recordFormat,
+                Date.now(),
+                Date.now(),
+            );
+        })
+        const batch = await db.prepare(statement);
+        await batch.run(params);
+        await batch.finalize();
     }
-    await batch.finalize();
 }
 
 (async () => {
