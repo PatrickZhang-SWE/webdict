@@ -1,13 +1,18 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { parse, getDictTitle } from './Parser/ParserManagement.js'
-import { addDict, addRecords } from './Utils/sqlite.js'
+import { addDict, addRecords, queryWord } from './Utils/sqlite.js'
 import { getLanguageMeta } from './common/Languages.js'
 
 const app = new Hono()
 
 app.get('/', (c) => {
   return c.text('Hello Hono!')
+})
+
+app.get('/v1/word/:word', async (c) => {
+  const word = c.req.param('word');
+  return c.json(await queryWord(word));
 })
 
 app.post('/v1/admin/dict/upload', async (c) => {

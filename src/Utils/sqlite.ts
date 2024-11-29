@@ -75,6 +75,12 @@ export async function addRecords(keyRecordPairs: ParserResultText[] | ParserResu
     }
 }
 
+export async function queryWord(keyword: string) {
+    const result = await db.all(`SELECT * FROM ${recordsTableName} WHERE keyword = ?`, [keyword]);
+    return result;
+}
+
+
 (async () => {
     db = await initializeDb();
     await createTables(db);

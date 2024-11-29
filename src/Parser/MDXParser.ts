@@ -95,14 +95,31 @@ async function parse(buff: ArrayBuffer) {
     const keywordSect = await parseKeyWordSect(keyWordSectPart, headerObject);
     const recordSetPart = buff.slice(headerLength + keywordSect.length);
     const recordDecompBlocks = await parseRecordSection(recordSetPart);
+    const keyRealRecordPair = new Map<string, string>();
+    const keyJumpRecordPair = new Map<string, string>();
     const parseResult: ParserResultText[] = [];
     keywordSect.keys.forEach((item, index) => {
         const offset = item.offset;
         const key = item.key;
         const length = item.length;
-        const record = Buffer.from(recordDecompBlocks.slice(offset, offset + length)).toString(headerObject.Encoding as BufferEncoding);
-        parseResult.push({ keyword: key, record: record });
+        let record = Buffer.from(recordDecompBlocks.slice(offset, offset + length - 1)).toString(headerObject.Encoding as BufferEncoding);
+        record = record.trim();
+        if (record.startsWith('@@@LINK=')) {
+            record = record.slice(8);
+            keyJumpRecordPair.set(key, record);
+        } else {
+            keyRealRecordPair.set(key, record);
+        }
     });
+    keyJumpRecordPair.forEach((value, key) => {
+        const realValue = keyRealRecordPair.get(value);
+        if (realValue) {
+            keyRealRecordPair.set(key, realValue);
+        }
+    });
+    keyRealRecordPair.forEach((value, key) => {
+        parseResult.push({ keyword: key, record: value });
+    })
     return parseResult;
 }
 
