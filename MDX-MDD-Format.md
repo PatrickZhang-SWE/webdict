@@ -233,15 +233,13 @@ The compression type can be indicated by `comp_type`. There are three options:
 
 ## Mdict v1 and v2 Format
 
-![mdictv1](/images/Pasted%20image%2020240928123211.png)
+![mdictv1](/images/MDX.svg)
 
-![mdictv1](/images/Pasted%20image%2020240928123255.png)
+![mdictv1](/images/MDD.svg)
 
 ## MDict v3 Format
 
-![mdictv1](/images/Pasted%20image%2020240928123444.png)
-
-![mdictv1](/images/Pasted%20image%2020240928123509.png)
+![mdictv1](/images/MDict3.svg)
 
 ## Reference
 

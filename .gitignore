@@ -2,8 +2,8 @@
 .yarn/
 !.yarn/releases
 .vscode/*
-!.vscode/launch.json
-!.vscode/*.code-snippets
+#!.vscode/launch.json
+#!.vscode/*.code-snippets
 .idea/workspace.xml
 .idea/usage.statistics.xml
 .idea/shelf
@@ -26,3 +26,6 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+# db
+*.db

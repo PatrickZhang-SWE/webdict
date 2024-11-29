@@ -2,11 +2,16 @@
   "name": "webdict",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch --inspect src/index.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.4",
-    "hono": "^4.6.8"
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.11",
+    "fast-xml-parser": "^4.5.0",
+    "hash-wasm": "4.12.0",
+    "sqlite3": "5.1.7",
+    "@types/sqlite3": "3.1.8",
+    "sqlite": "5.1.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
