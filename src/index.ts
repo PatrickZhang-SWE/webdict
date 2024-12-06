@@ -3,6 +3,8 @@ import { Hono } from 'hono'
 import { parse, getDictTitle } from './Parser/ParserManagement.js'
 import { addDict, addRecords, queryWord } from './Utils/sqlite.js'
 import { getLanguageMeta } from './common/Languages.js'
+import { setUpMorphology } from './Utils/HunspellMorphology.js'
+import * as fs from 'fs';
 
 const app = new Hono()
 
@@ -13,6 +15,31 @@ app.get('/', (c) => {
 app.get('/v1/word/:word', async (c) => {
   const word = c.req.param('word');
   return c.json(await queryWord(word));
+})
+
+app.post('/v1/admin/dict/morphology', async (c) => {
+  const body = await c.req.parseBody();
+  const aff = body['aff'];
+  if (!aff || !(aff instanceof File)) {
+    return c.body('No aff file.');
+  }
+  const dic = body['dic'];
+  if (!dic || !(dic instanceof File)) {
+    return c.body('No dic file.');
+  }
+  const affName = `${Math.random().toString(36).substring(7)}.${aff.name.split('.').pop()}`;
+  const dicName = `${Math.random().toString(36).substring(7)}.${dic.name.split('.').pop()}`;
+  const affPath = `hunspell/${affName}`;
+  const dicPath = `hunspell/${dicName}`;
+  try {
+    await fs.promises.writeFile(affPath, new Uint8Array(await aff.arrayBuffer()));
+    await fs.promises.writeFile(dicPath, new Uint8Array(await dic.arrayBuffer()));
+    await setUpMorphology(affPath, dicPath);
+  } finally {
+    await fs.promises.unlink(affPath).catch(() => { });
+    await fs.promises.unlink(dicPath).catch(() => { });
+  }
+  return c.json("Success");
 })
 
 app.post('/v1/admin/dict/upload', async (c) => {

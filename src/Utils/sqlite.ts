@@ -2,10 +2,12 @@ import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import { type DictInfo } from '../common/DictInfo.js';
 import type { ParserResultBinary, ParserResultText } from '../common/ParserResult.js';
+import { type HunSpellWordInfo } from '../common/HunSpellWordInfo.js';
 
 let db: Database;
 const dictTableName = 'dicts';
 const recordsTableName = 'records';
+const wordsMorphologyTableName = 'wordsMorphology';
 const chunkSize = 5000;
 
 async function initializeDb() {
@@ -38,6 +40,12 @@ async function createTables(db: Database) {
             createTime INTEGER
         )
     `);
+
+    await db.exec(`CREATE TABLE IF NOT EXISTS ${wordsMorphologyTableName} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        morphologicalWord TEXT UNIQUE,
+        rootWord TEXT
+    ) `);
 }
 
 export async function addDict(dictInfo: DictInfo) {
@@ -56,10 +64,10 @@ export async function addRecords(keyRecordPairs: ParserResultText[] | ParserResu
     for (let i = 0; i < keyRecordPairs.length; i += chunkSize) {
         let statement = `INSERT INTO ${recordsTableName} (dictId, keyword, record, recordFormat, updateTime, createTime)
                        VALUES`;
-        const slicedKeyRecordPairs = keyRecordPairs.slice(i, i + chunkSize > keyRecordPairs.length? keyRecordPairs.length: i + chunkSize);
+        const slicedKeyRecordPairs = keyRecordPairs.slice(i, i + chunkSize > keyRecordPairs.length ? keyRecordPairs.length : i + chunkSize);
         const params: any = [];
         slicedKeyRecordPairs.forEach((keyRecordPair, index) => {
-            index === slicedKeyRecordPairs.length - 1? statement += ' (?, ?, ?, ?, ?, ?)': statement += ' (?, ?, ?, ?, ?, ?),';
+            index === slicedKeyRecordPairs.length - 1 ? statement += ' (?, ?, ?, ?, ?, ?)' : statement += ' (?, ?, ?, ?, ?, ?),';
             params.push(
                 dictInfo.id,
                 keyRecordPair.keyword,
@@ -78,6 +86,24 @@ export async function addRecords(keyRecordPairs: ParserResultText[] | ParserResu
 export async function queryWord(keyword: string) {
     const result = await db.all(`SELECT * FROM ${recordsTableName} WHERE keyword = ?`, [keyword]);
     return result;
+}
+
+export async function addMorphology(wordInfo: HunSpellWordInfo) {
+    const { word, morph } = wordInfo;
+    const length = morph.length;
+    for (let i = 0; i < length; i += chunkSize) {
+        let statement = `INSERT INTO ${wordsMorphologyTableName} (morphologicalWord, rootWord)
+                       VALUES`;
+        const slicedMorph = morph.slice(i, i + chunkSize > morph.length ? morph.length : i + chunkSize);
+        const params: any = [];
+        slicedMorph.forEach((morphWord, index) => {
+            index === slicedMorph.length - 1 ? statement += ' (?, ?)' : statement += ' (?, ?),';
+            params.push(morphWord, word);
+        })
+        const batch = await db.prepare(statement);
+        await batch.run(params);
+        await batch.finalize();
+    }
 }
 
 
