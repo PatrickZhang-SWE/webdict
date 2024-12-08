@@ -3,6 +3,7 @@ import { open, Database } from 'sqlite';
 import { type DictInfo } from '../common/DictInfo.js';
 import type { ParserResultBinary, ParserResultText } from '../common/ParserResult.js';
 import { type HunSpellWordInfo } from '../common/HunSpellWordInfo.js';
+import exp from 'constants';
 
 let db: Database;
 const dictTableName = 'dicts';
@@ -43,8 +44,10 @@ async function createTables(db: Database) {
 
     await db.exec(`CREATE TABLE IF NOT EXISTS ${wordsMorphologyTableName} (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        morphologicalWord TEXT UNIQUE,
-        rootWord TEXT
+        morphologicalWord TEXT,
+        rootWord TEXT,
+        updateTime INTEGER,
+        createTime INTEGER
     ) `);
 }
 
@@ -84,26 +87,41 @@ export async function addRecords(keyRecordPairs: ParserResultText[] | ParserResu
 }
 
 export async function queryWord(keyword: string) {
-    const result = await db.all(`SELECT * FROM ${recordsTableName} WHERE keyword = ?`, [keyword]);
+    const rootWords = await db.all(`SELECT rootWord FROM ${wordsMorphologyTableName} WHERE morphologicalWord = ?`, [keyword]);
+    const morphs = rootWords.map((item) => item.rootWord);
+    const result = await db.all(`SELECT keyword, record FROM ${recordsTableName} WHERE dictId = ? AND keyword IN (${morphs.map((_, index) => '?').join(',')})`, [1, ...morphs]);
     return result;
 }
 
-export async function addMorphology(wordInfo: HunSpellWordInfo) {
-    const { word, morph } = wordInfo;
-    const length = morph.length;
-    for (let i = 0; i < length; i += chunkSize) {
-        let statement = `INSERT INTO ${wordsMorphologyTableName} (morphologicalWord, rootWord)
+export async function addMorphologies(morphologies: HunSpellWordInfo[]) {
+    for (let i = 0; i < morphologies.length; i += chunkSize) {
+        let statement = `INSERT INTO ${wordsMorphologyTableName} (morphologicalWord, rootWord, updateTime, createTime)
                        VALUES`;
-        const slicedMorph = morph.slice(i, i + chunkSize > morph.length ? morph.length : i + chunkSize);
+        const slicedMorphologies = morphologies.slice(i, i + chunkSize > morphologies.length ? morphologies.length : i + chunkSize);
         const params: any = [];
-        slicedMorph.forEach((morphWord, index) => {
-            index === slicedMorph.length - 1 ? statement += ' (?, ?)' : statement += ' (?, ?),';
-            params.push(morphWord, word);
+        slicedMorphologies.forEach((morphology, index) => {
+            index === slicedMorphologies.length - 1 ? statement += ' (?, ?, ?, ?)' : statement += ' (?, ?, ?, ?),';
+            params.push(
+                morphology.morph,
+                morphology.word,
+                Date.now(),
+                Date.now(),
+            );
         })
         const batch = await db.prepare(statement);
         await batch.run(params);
         await batch.finalize();
     }
+}
+
+
+export async function addMorphology(rootWord: string, morph: string) {
+    const { lastID } = await db.run(`INSERT INTO ${wordsMorphologyTableName} (morphologicalWord, rootWord)
+                                     VALUES (?, ?)`, [
+        morph,
+        rootWord
+    ]);
+    return lastID;
 }
 
 
