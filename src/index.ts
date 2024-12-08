@@ -29,13 +29,16 @@ app.post('/v1/admin/dict/morphology', async (c) => {
   }
   const affName = `${Math.random().toString(36).substring(7)}.${aff.name.split('.').pop()}`;
   const dicName = `${Math.random().toString(36).substring(7)}.${dic.name.split('.').pop()}`;
-  const affPath = `hunspell/${affName}`;
-  const dicPath = `hunspell/${dicName}`;
+  const affPath = `./${affName}`;
+  const dicPath = `./${dicName}`;
   try {
     await fs.promises.writeFile(affPath, new Uint8Array(await aff.arrayBuffer()));
     await fs.promises.writeFile(dicPath, new Uint8Array(await dic.arrayBuffer()));
     await setUpMorphology(affPath, dicPath);
-  } finally {
+  } catch (e) { 
+    console.log(e);
+    throw e;
+   } finally {
     await fs.promises.unlink(affPath).catch(() => { });
     await fs.promises.unlink(dicPath).catch(() => { });
   }
