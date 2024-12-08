@@ -3,7 +3,6 @@ import { open, Database } from 'sqlite';
 import { type DictInfo } from '../common/DictInfo.js';
 import type { ParserResultBinary, ParserResultText } from '../common/ParserResult.js';
 import { type HunSpellWordInfo } from '../common/HunSpellWordInfo.js';
-import exp from 'constants';
 
 let db: Database;
 const dictTableName = 'dicts';
