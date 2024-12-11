@@ -169,6 +169,6 @@ function asUint32Array(arr: number[]): Uint32Array {
   }
 
   // Example Usage:
-const message = new TextEncoder().encode("Hello, world!");
-const hash = ripemd128(message.buffer);
-console.log("RIPEMD-128 Hash ts:", Buffer.from(hash).toString('hex'));
+// const message = new TextEncoder().encode("Hello, world!");
+// const hash = ripemd128(message.buffer);
+// console.log("RIPEMD-128 Hash ts:", Buffer.from(hash).toString('hex'));
